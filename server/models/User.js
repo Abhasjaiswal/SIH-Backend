@@ -1,26 +1,63 @@
-const mongoose = require("mongoose");
+const express = require("express");
+const User = require("../models/User");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const dotenv = require("dotenv");
 
-const userSchema = new mongoose.Schema({
-  username: {
-    type: String,
-    required: true,
-    unique: true,
-  },
-  password: {
-    type: String,
-    required: true,
-  },
-});
+dotenv.config();
 
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) {
-    return next();
+const router = express.Router();
+
+// Sign up
+router.post("/signup", async (req, res) => {
+  const { name, sapId, course, year, email, username, password } = req.body;
+
+  try {
+    // Check if user exists
+    let user = await User.findOne({ email });
+    if (user) {
+      return res.status(400).json({ message: "User already exists" });
+    }
+
+    // Create new user
+    user = new User({ name, sapId, course, year, email, username, password });
+    await user.save();
+
+    // Generate JWT token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+
+    res.status(201).json({ message: "User created successfully", token });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
   }
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
 });
 
-const User = mongoose.model("User", userSchema);
-module.exports = User;
+// Login
+router.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+
+  try {
+    // Find user by username
+    const user = await User.findOne({ username });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    // Check password
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid credentials" });
+    }
+
+    // Generate JWT token
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+
+    res.status(200).json({ message: "Logged in successfully", token });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+module.exports = router;
